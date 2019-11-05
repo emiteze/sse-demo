@@ -1,0 +1,21 @@
+version: '3'
+services:
+
+  postgres:
+    image: postgres:9.6-alpine
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_DB=ssedemo
+      - POSTGRES_USER=ssedemo
+      - POSTGRES_PASSWORD=ssedemo
+    networks:
+      - custom
+
+networks:
+  custom:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.33.0.0/16
