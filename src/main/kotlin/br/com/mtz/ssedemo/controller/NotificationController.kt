@@ -11,17 +11,37 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 class NotificationController(private val notificationService: NotificationService) {
 
     companion object {
-        private val notifier = SseEmitter(86400000)
+        private val notifiers: MutableMap<String, SseEmitter> = mutableMapOf()
     }
 
-    @RequestMapping("/connect")
-    fun connect(): SseEmitter = notifier
+    @CrossOrigin
+    @RequestMapping("/connect/{id}")
+    fun connect(@PathVariable id: String): SseEmitter {
+        val notifier = SseEmitter(86400000)
+        notifiers[id] = notifier
+        notifier.onCompletion { notifiers.remove(id) }
+        notifier.onTimeout {
+            notifier.complete()
+            notifiers.remove(id)
+        }
+        return notifier
+    }
 
     @PostMapping(value = ["/notifications"], consumes = [MediaType.APPLICATION_JSON_VALUE])
     @ResponseStatus(HttpStatus.CREATED)
     fun create(@RequestBody createNotificationRequest: NotificationRequest) {
+        val deadNotifiers: MutableMap<String, SseEmitter> = mutableMapOf()
         val entity = notificationService.create(createNotificationRequest)
-        notifier.send(entity)
+        notifiers.filterKeys { it == entity.destination }.forEach { notifier ->
+            try {
+                notifier.value.send(SseEmitter.event().data(entity).name("NOTIFICATION").id(entity.destination))
+            } catch (exception: Exception) {
+                deadNotifiers[entity.destination] = notifier.value
+            }
+        }
+        deadNotifiers.forEach {
+            notifiers.remove(it.key)
+        }
     }
 
 }
