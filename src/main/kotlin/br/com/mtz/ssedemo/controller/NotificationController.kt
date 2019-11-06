@@ -17,31 +17,22 @@ class NotificationController(private val notificationService: NotificationServic
     @CrossOrigin
     @RequestMapping("/connect/{id}")
     fun connect(@PathVariable id: String): SseEmitter {
-        val notifier = SseEmitter(86400000)
-        notifiers[id] = notifier
-        notifier.onCompletion { notifiers.remove(id) }
-        notifier.onTimeout {
-            notifier.complete()
-            notifiers.remove(id)
-        }
-        return notifier
+        return SseEmitter(86400000)
+            .apply {
+                onCompletion { notifiers.remove(id) }
+                onTimeout {
+                    this.complete()
+                    notifiers.remove(id)
+                }
+                notifiers[id] = this
+            }
     }
 
     @PostMapping(value = ["/notifications"], consumes = [MediaType.APPLICATION_JSON_VALUE])
     @ResponseStatus(HttpStatus.CREATED)
     fun create(@RequestBody createNotificationRequest: NotificationRequest) {
-        val deadNotifiers: MutableMap<String, SseEmitter> = mutableMapOf()
         val entity = notificationService.create(createNotificationRequest)
-        notifiers.filterKeys { it == entity.destination }.forEach { notifier ->
-            try {
-                notifier.value.send(SseEmitter.event().data(entity).name("NOTIFICATION").id(entity.destination))
-            } catch (exception: Exception) {
-                deadNotifiers[entity.destination] = notifier.value
-            }
-        }
-        deadNotifiers.forEach {
-            notifiers.remove(it.key)
-        }
+        notifiers[entity.destination]?.send(SseEmitter.event().data(entity).name("NOTIFICATION"))
     }
 
 }
